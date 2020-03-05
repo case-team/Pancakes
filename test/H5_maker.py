@@ -24,48 +24,79 @@ def append_h5(f, name, data):
 
 
 class Outputer:
-    def __init__(self, outputFileName="out.root", batch_size = 5000, issignal = False):
+    def __init__(self, outputFileName="out.root", batch_size = 5000, truth_label = 0):
         self.batch_size = batch_size
         self.output_name = outputFileName
-        self.issignal = np.array([issignal]*batch_size, dtype=np.bool_)
+        self.truth_label = np.array([[truth_label]]*batch_size, dtype=np.int8)
         self.first_write = False
         self.idx = 0
         self.nBatch = 0
+        self.n_pf_cands = 100 #how many PF candidates to save (max)
         self.reset()
 
     def reset(self):
         self.idx = 0
-        n_pf_cands = 100
-        self.jet1_PFCands = np.zeros((self.batch_size, n_pf_cands,4), dtype=np.float16)
-        self.jet2_PFCands = np.zeros((self.batch_size, n_pf_cands, 4), dtype=np.float16)
+        self.jet1_PFCands = np.zeros((self.batch_size, self.n_pf_cands,4), dtype=np.float16)
+        self.jet2_PFCands = np.zeros((self.batch_size, self.n_pf_cands, 4), dtype=np.float16)
         self.jet1_extraInfo = np.zeros((self.batch_size, 7), dtype=np.float16)
         self.jet2_extraInfo = np.zeros((self.batch_size, 7), dtype=np.float16)
-        self.jet_kinematics = np.zeros((self.batch_size, 9), dtype=np.float16)
-        self.event_info = np.zeros((self.batch_size, 4), dtype=np.float32)
+        self.jet_kinematics = np.zeros((self.batch_size, 10), dtype=np.float16)
+        self.event_info = np.zeros((self.batch_size, 5), dtype=np.float32)
 
-    def fill_event(self, inTree, jet1, jet2, PFCands, mjj):
+
+    def parse_gen_level(self, inTree):
+    #TODO Implement this so it works for all types of signal models!
+        return 0
+
+
+    def fill_event(self, inTree, jet1, jet2, PFCands, subjets, mjj):
 
         genWeight = inTree.readBranch('genWeight')
         MET = inTree.readBranch('MET_pt')
         MET_phi = inTree.readBranch('MET_phi')
         eventNum = inTree.readBranch('event')
 
-        event_info = [eventNum, MET, MET_phi, genWeight]
+
+        leptonic_decay = self.parse_gen_level(inTree)
+
+        event_info = [eventNum, MET, MET_phi, genWeight, leptonic_decay]
+
+        d_eta = abs(jet1.eta - jet2.eta)
 
 
-        jet_kinematics = [mjj, jet1.pt, jet1.eta, jet1.phi, jet1.msoftdrop, jet2.pt, jet2.eta, jet2.phi, jet2.msoftdrop]
+        jet_kinematics = [mjj, d_eta, jet1.pt, jet1.eta, jet1.phi, jet1.msoftdrop, jet2.pt, jet2.eta, jet2.phi, jet2.msoftdrop]
 
-        j1_nPF = min(100, jet1.nPFConstituents)
-        j2_nPF = min(100, jet2.nPFConstituents)
-        jet1_extraInfo = [jet1.tau1, jet1.tau2, jet1.tau3, jet1.tau4, jet1.lsf3, jet1.btagDeepB, j1_nPF]
-        jet2_extraInfo = [jet2.tau1, jet2.tau2, jet2.tau3, jet2.tau4, jet2.lsf3, jet2.btagDeepB, j2_nPF]
+        j1_nPF = min(self.n_pf_cands, jet1.nPFConstituents)
+        j2_nPF = min(self.n_pf_cands, jet2.nPFConstituents)
+        
+        #maximum deepcsv from top 2 subjets of the fatjet
+        jet1_btag = jet2_btag = -1.
+        
+        if(jet1.subJetIdx1 > 0):
+            jet1_btag = subjets[jet1.subJetIdx1].btagDeepB
+        if(jet1.subJetIdx2 > 0):
+            jet1_btag = max(jet1_btag, subjets[jet1.subJetIdx2].btagDeepB)
+
+        if(jet2.subJetIdx1 > 0):
+            jet2_btag = subjets[jet2.subJetIdx1].btagDeepB
+        if(jet2.subJetIdx2 > 0):
+            jet2_btag = max(jet2_btag, subjets[jet2.subJetIdx2].btagDeepB)
+
+        jet1_extraInfo = [jet1.tau1, jet1.tau2, jet1.tau3, jet1.tau4, jet1.lsf3, jet1_btag, j1_nPF]
+        jet2_extraInfo = [jet2.tau1, jet2.tau2, jet2.tau3, jet2.tau4, jet2.lsf3, jet2_btag, j2_nPF]
         #print(jet1.PFConstituents_Start, jet1.PFConstituents_Start + jet1.nPFConstituents, jet2.PFConstituents_Start, jet2.PFConstituents_Start + jet2.nPFConstituents)
+
         range1 = range(jet1.PFConstituents_Start, jet1.PFConstituents_Start + j1_nPF, 1)
         range2 = range(jet2.PFConstituents_Start, jet2.PFConstituents_Start + j2_nPF, 1)
-        jet1_PFCands = [[PFCands[idx].pt, PFCands[idx].eta, PFCands[idx].phi, PFCands[idx].mass] for idx in range1]
-        jet2_PFCands = [[PFCands[idx].pt, PFCands[idx].eta, PFCands[idx].phi, PFCands[idx].mass] for idx in range2]
-        
+        jet1_PFCands = []
+        jet2_PFCands = []
+        for idx in range1:
+            cand = ROOT.Math.PtEtaPhiMVector(PFCands[idx].pt, PFCands[idx].eta, PFCands[idx].phi, PFCands[idx].mass)
+            jet1_PFCands.append([cand.Px(), cand.Py(), cand.Pz(), cand.E()])
 
+        for idx in range2:
+            cand = ROOT.Math.PtEtaPhiMVector(PFCands[idx].pt, PFCands[idx].eta, PFCands[idx].phi, PFCands[idx].mass)
+            jet2_PFCands.append([cand.Px(), cand.Py(), cand.Pz(), cand.E()])
 
 
         self.event_info[self.idx] = np.array(event_info, dtype=np.float32)
@@ -88,7 +119,7 @@ class Outputer:
             self.first_write = True
             print("First write, creating dataset with name %s \n" % self.output_name)
             with h5py.File(self.output_name, "w") as f:
-                f.create_dataset("issignal", data=self.issignal, chunks = True, maxshape=None)
+                f.create_dataset("truth_label", data=self.truth_label, chunks = True, maxshape=(None,1))
                 f.create_dataset("event_info", data=self.event_info, chunks = True, maxshape=(None, self.event_info.shape[1]))
                 f.create_dataset("jet_kinematics", data=self.jet_kinematics, chunks = True, maxshape=(None, self.jet_kinematics.shape[1]))
                 f.create_dataset("jet1_extraInfo", data=self.jet1_extraInfo, chunks = True, maxshape=(None, self.jet1_extraInfo.shape[1]))
@@ -98,7 +129,7 @@ class Outputer:
 
         else:
             with h5py.File(self.output_name, "a") as f:
-                append_h5(f,'issignal',self.issignal)
+                append_h5(f,'truth_label',self.truth_label)
                 append_h5(f,'event_info',self.event_info)
                 append_h5(f,'jet_kinematics',self.jet_kinematics)
                 append_h5(f,'jet1_extraInfo',self.jet1_extraInfo)
@@ -127,7 +158,7 @@ class Outputer:
 
 
 
-def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, json = None):
+def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root", json = '', year = 2016):
 
     inputFile = TFile.Open(inputFileName)
     if(not inputFile): #check for null pointer
@@ -136,16 +167,23 @@ def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, jso
 
     #get input tree
     inTree = inputFile.Get("Events")
+
     # pre-skimming
-    elist,jsonFilter = preSkim(inTree, json, cut)
+    if(json != ''):
+        elist,jsonFilter = preSkim(inTree, json)
 
-    #number of events to be processed 
-    nTotal = elist.GetN() if elist else inTree.GetEntries()
-    
-    print('Pre-select %d entries out of %s '%(nTotal,inTree.GetEntries()))
+        #number of events to be processed 
+        nTotal = elist.GetN() if elist else inTree.GetEntries()
+        
+        print('Pre-select %d entries out of %s '%(nTotal,inTree.GetEntries()))
 
 
-    inTree= InputTree(inTree, elist) 
+        inTree= InputTree(inTree, elist) 
+    else:
+        nTotal = inTree.GetEntries()
+        inTree= InputTree(inTree) 
+        print('Running over %i entries \n' % nTotal)
+
     out = Outputer(outputFileName)
 
 
@@ -153,29 +191,42 @@ def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, jso
     eventBranch = inTree.GetBranch('event')
     treeEntries = eventBranch.GetEntries()
 
+    #Just tried to copy common filters, feel free to add any i am missing
     filters = ["Flag_goodVertices",
-    "Flag_globalSuperTightHalo2016Filter",
+    "Flag_globalTightHalo2016Filter",
+    "Flag_eeBadScFilter", 
     "Flag_HBHENoiseFilter",
     "Flag_HBHENoiseIsoFilter",
+    "Flag_ecalBadCalibFilter",
     "Flag_EcalDeadCellTriggerPrimitiveFilter",
-    "Flag_goodVertices"
+    "Flag_BadChargedCandidateFilter",
     ]
+    if(year == 2016): filters.append("Flag_CSCTightHaloFilter")
 
+    if(year == 2016):
+        triggers = ["HLT_PF800", "HLT_PF900", "HLT_Jet450"]
+    elif(year == 2017):
+        triggers = ["HLT_PFHT1050", "HLT_PFJet500", "HLT_AK8PFJet380_TrimMass30", 'HLT_AK8PFJet400_TrimMass30']
+    elif(year == 2018):
+        triggers = ["HLT_PFHT1050", "HLT_PFJet500", "HLT_AK8PFJet380_TrimMass30", 'HLT_AK8PFJet400_TrimMass30']
+    else:
+        print("Invalid year option of %i. Year must be 2016, 2017, or 2018! \n" % year)
+        exit(1)
 
-    triggers = [
-            'HLT_PFHT780',
-            'HLT_PFHT890',
-            'HLT_PFHT1050',
-            'HLT_PFJet500',
-            'HLT_AK8PFJet500',
-            'HLT_AK8PFHT700_TrimMass50',
-            'HLT_AK8PFHT800_TrimMass50',
-            'HLT_AK8PFHT900_TrimMass50',
-            'HLT_AK8PFJet360_TrimMass30',
-            'HLT_AK8PFJet380_TrimMass30',
-            'HLT_AK8PFJet400_TrimMass30',
-            'HLT_AK8PFJet420_TrimMass30',
-            ]
+        triggers = [
+                'HLT_PFHT780',
+                'HLT_PFHT890',
+                'HLT_PFHT1050',
+                'HLT_PFJet500',
+                'HLT_AK8PFJet500',
+                'HLT_AK8PFHT700_TrimMass50',
+                'HLT_AK8PFHT800_TrimMass50',
+                'HLT_AK8PFHT900_TrimMass50',
+                'HLT_AK8PFJet360_TrimMass30',
+                'HLT_AK8PFJet380_TrimMass30',
+                'HLT_AK8PFJet400_TrimMass30',
+                'HLT_AK8PFJet420_TrimMass30',
+                ]
 
     mjj_cut = 1200.
 
@@ -184,12 +235,13 @@ def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, jso
 # -------- Begin Loop-------------------------------------
     entries = inTree.entries
     count = 0
+    saved = 0
     for entry in xrange(entries):
 
-        count   =   count + 1
         if count % 10000 == 0 :
             print('--------- Processing Event ' + str(count) +'   -- percent complete ' + str(100*count/nTotal) + '% -- ')
 
+        count +=1
         # Grab the event
         event = Event(inTree, entry)
 
@@ -209,9 +261,10 @@ def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, jso
 
         PFCands = Collection(event, "FatJetPFCands")
         AK8Jets = Collection(event, "FatJet")
-        MuonsCol = Collection(event, "Muon")
-        ElectronsCol = Collection(event, "Electron")
-        PhotonsCol = Collection(event, "Photon")
+        #MuonsCol = Collection(event, "Muon")
+        #ElectronsCol = Collection(event, "Electron")
+        #PhotonsCol = Collection(event, "Photon")
+        subjets = Collection(event, "SubJet")
 
         min_pt = 200
         #keep 2 jets with pt > 200, tight id and have highest softdrop mass
@@ -223,39 +276,49 @@ def NanoReader(inputFileName="in.root", outputFileName="out.root", cut=None, jso
             #want tight id
             if((jet.jetId & 2 == 2) and jet.pt > min_pt and abs(jet.eta) < 2.5):
                 jet.PFConstituents_Start = pf_conts_start
-                if(jet1 == None or jet1.msoftdrop < jet.msoftdrop):
+                if(jet1 == None or jet.pt > jet1.pt):
                     jet2 = jet1
                     jet1 = jet
-                elif(jet2 == None or jet2.msoftdrop < jet.msoftdrop):
+                elif(jet2 == None or jet.pt > jet2.pt):
                     jet2 = jet
             pf_conts_start += jet.nPFConstituents
 
         if(jet1 == None or jet2 == None): continue
 
-        j1_4vec = TLorentzVector()
-        j2_4vec = TLorentzVector()
-        j1_4vec.SetPtEtaPhiM(jet1.pt, jet1.eta, jet1.phi, jet1.msoftdrop)
-        j2_4vec.SetPtEtaPhiM(jet2.pt, jet2.eta, jet2.phi, jet2.msoftdrop)
+        #Order jets so jet1 is always the higher mass one
+        if(jet1.msoftdrop < jet2.msoftdrop):
+            temp = jet1
+            jet1 = jet2
+            jet2 = temp
+
+        j1_4vec = ROOT.Math.PtEtaPhiMVector(jet1.pt, jet1.eta, jet1.phi, jet1.msoftdrop)
+        j2_4vec = ROOT.Math.PtEtaPhiMVector(jet2.pt, jet2.eta, jet2.phi, jet2.msoftdrop)
 
         dijet = j1_4vec + j2_4vec
         mjj = dijet.M()
 
         if(mjj< mjj_cut): continue
 
-        count+=1
-        out.fill_event(inTree, jet1, jet2, PFCands, mjj)
+        saved+=1
+        out.fill_event(inTree, jet1, jet2, PFCands, subjets, mjj)
 
     out.final_write_out()
-    return count
+    print("Done. Saved %i events. Selection efficiency is %.3f \n" % (saved, float(saved)/nTotal))
+    return saved
 
 
 parser = OptionParser()
+parser.add_option("-f", "--flag", dest = "flag", default = -1234, help="Flag to label what type of process this is (QCD, ttbar, signal, etc)")
 parser.add_option("-i", "--input", dest = "fin", default = '', help="Input file name")
 parser.add_option("-o", "--output", dest = "fout", default = 'test.h5', help="Output file name")
-parser.add_option("-c", "--cut", default = '', help="Cut string")
 parser.add_option("-j", "--json", default = '', help="Json file name")
+parser.add_option("-y", "--year", type=int, default = 2016, help="Year the sample corresponds to")
 
 options, args = parser.parse_args()
 
-NanoReader(options.fin, options.fout)
+if(options.flag == -1234):
+    print("No --flag option set. You must specify what type of process this is! \n" )
+    exit(1)
+
+NanoReader(options.flag, inputFileName = options.fin, outputFileName = options.fout, json = options.json, year = options.year)
 

@@ -1,5 +1,4 @@
-# Read NanoAOD and make smaller ttree for fitting & plotting
-
+# Read nanoAOD with PF constituents (aka pancakes), apply a pre-selection and output to an H5 file format
 
 import ROOT
 from ROOT import TLorentzVector, TFile

@@ -14,7 +14,7 @@ git cms-addpkg PhysicsTools/SelectorUtils
 ### Get customized NanoAOD producer
 
 ```bash
-git clone https://github.com/DAZSLE/Pancakes.git PhysicsTools/Pancakes
+git clone https://github.com/case-team/Pancakes.git PhysicsTools/Pancakes
 ```
 
 ### Compile

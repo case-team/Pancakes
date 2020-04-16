@@ -138,7 +138,7 @@ class Outputer:
 
         self.reset()
 
-    def final_write_out(self):
+    def final_write_out(self, eff):
         if(self.idx < self.batch_size):
             print("Last batch only filled %i events, shortening arrays \n" % self.idx)
             self.jet1_PFCands = self.jet1_PFCands[:self.idx]
@@ -149,6 +149,8 @@ class Outputer:
             self.event_info = self.event_info[:self.idx]
 
         self.write_out()
+        with h5py.File(self.output_name, "w") as f:
+            f.create_dataset("preselection_eff", data=np.array([eff]))
 
 
 
@@ -157,7 +159,7 @@ class Outputer:
 
 
 
-def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root", json = '', year = 2016):
+def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root", json = '', year = 2016, nEventsMax = -1):
 
     inputFile = TFile.Open(inputFileName)
     if(not inputFile): #check for null pointer
@@ -203,7 +205,7 @@ def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root",
     if(year == 2016): filters.append("Flag_CSCTightHaloFilter")
 
     if(year == 2016):
-        triggers = ["HLT_PF800", "HLT_PF900", "HLT_Jet450"]
+        triggers = ["HLT_PFHT800", "HLT_PFHT900", "HLT_PFJet450", "HLT_PFJet500", "HLT_AK8PFJet450", "HLT_AK8PFJet500"]
     elif(year == 2017):
         triggers = ["HLT_PFHT1050", "HLT_PFJet500", "HLT_AK8PFJet380_TrimMass30", 'HLT_AK8PFJet400_TrimMass30']
     elif(year == 2018):
@@ -300,9 +302,12 @@ def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root",
 
         saved+=1
         out.fill_event(inTree, jet1, jet2, PFCands, subjets, mjj)
+        if(nEventsMax > 0 and saved >= nEventsMax): break
 
-    out.final_write_out()
-    print("Done. Saved %i events. Selection efficiency is %.3f \n" % (saved, float(saved)/nTotal))
+    efficiency = float(saved)/count
+    print("Done. Saved %i events. Selection efficiency is %.3f \n" % (saved, efficiency))
+    out.final_write_out(efficiency)
+    print("outputed to %s" % outputFileName)
     return saved
 
 
@@ -312,6 +317,7 @@ parser.add_option("-i", "--input", dest = "fin", default = '', help="Input file 
 parser.add_option("-o", "--output", dest = "fout", default = 'test.h5', help="Output file name")
 parser.add_option("-j", "--json", default = '', help="Json file name")
 parser.add_option("-y", "--year", type=int, default = 2016, help="Year the sample corresponds to")
+parser.add_option("-n", "--nEvents",  type=int, default = -1, help="Maximum number of events to output (-1 to run over whole file)")
 
 options, args = parser.parse_args()
 
@@ -319,5 +325,5 @@ if(options.flag == -1234):
     print("No --flag option set. You must specify what type of process this is! \n" )
     exit(1)
 
-NanoReader(options.flag, inputFileName = options.fin, outputFileName = options.fout, json = options.json, year = options.year)
+NanoReader(options.flag, inputFileName = options.fin, outputFileName = options.fout, json = options.json, year = options.year, nEventsMax = options.nEvents)
 

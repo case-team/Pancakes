@@ -149,7 +149,7 @@ class Outputer:
             self.event_info = self.event_info[:self.idx]
 
         self.write_out()
-        with h5py.File(self.output_name, "w") as f:
+        with h5py.File(self.output_name, "a") as f:
             f.create_dataset("preselection_eff", data=np.array([eff]))
 
 
@@ -305,9 +305,9 @@ def NanoReader(process_flag, inputFileName="in.root", outputFileName="out.root",
         if(nEventsMax > 0 and saved >= nEventsMax): break
 
     efficiency = float(saved)/count
-    print("Done. Saved %i events. Selection efficiency is %.3f \n" % (saved, efficiency))
     out.final_write_out(efficiency)
-    print("outputed to %s" % outputFileName)
+    print("Done. Selected %i events. Selection efficiency is %.3f \n" % (saved, efficiency))
+    print("Outputed to %s" % outputFileName)
     return saved
 
 

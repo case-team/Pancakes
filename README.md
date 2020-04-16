@@ -9,6 +9,9 @@ cd CMSSW_10_6_5/src
 cmsenv
 git cms-addpkg PhysicsTools/NanoAOD 
 git cms-addpkg PhysicsTools/SelectorUtils 
+
+#only needed for H5 maker
+git clone https://github.com/cms-nanoAOD/nanoAOD-tools.git PhysicsTools/NanoAODTools
 ```
 
 ### Get customized NanoAOD producer

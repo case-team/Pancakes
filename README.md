@@ -17,9 +17,6 @@ git cms-addpkg PhysicsTools/SelectorUtils
 
 ```bash
 git clone https://github.com/case-team/Pancakes.git PhysicsTools/Pancakes
-
-#only needed for H5 maker
-git clone https://github.com/cms-nanoAOD/nanoAOD-tools.git PhysicsTools/NanoAODTools
 ```
 
 ### Compile
